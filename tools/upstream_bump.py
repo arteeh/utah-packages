@@ -408,7 +408,7 @@ def forge_planned_entry(entry: dict, release: str, digest: str) -> dict:
     return updated
 
 
-RELEASE_LINE = re.compile(r"(?m)^(Release:[ \t]*)(\d[\w.]*)(.*)$")
+RELEASE_LINE = re.compile(r"(?m)^(Release:[ \t]*)(\d+(?:\.\d+)*)(.*)$")
 
 
 def reset_release(text: str) -> str:

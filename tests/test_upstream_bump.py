@@ -384,6 +384,7 @@ class ReleaseResetTests(unittest.TestCase):
              "1%{?gitdate:.%{gitdate}git%{gitversion}}%{?dist}"),
             ("2%{?pre_tag}%{?dist} # comment", "1%{?pre_tag}%{?dist} # comment"),
             ("7", "1"),
+            ("0.bootstrap%{?dist}", "1.bootstrap%{?dist}"),
             ("%autorelease", "%autorelease"),
             ("%{baserelease}%{?dist}", "%{baserelease}%{?dist}"),
             ("%{samba_release}%{?dist}", "%{samba_release}%{?dist}"),
