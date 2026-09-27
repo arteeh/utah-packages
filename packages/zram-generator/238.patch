@@ -10,11 +10,15 @@ by default, but no actual code changes.
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/Cargo.toml b/Cargo.toml
+index 744b827..bd67fe5 100644
 --- a/Cargo.toml
 +++ b/Cargo.toml
-@@ -24,4 +24,4 @@
+@@ -23,7 +23,7 @@ fasteval = { version = "0.2", default-features = false }
+ [dev-dependencies]
  tempfile = "3"
  fs_extra = "1.3"
 -nix = ">=0.22, <0.24"
 +nix = { version = "0.30", features = ["mount", "sched", "user"] }
  ctor = "0.2"
+ 
+ [profile.release]

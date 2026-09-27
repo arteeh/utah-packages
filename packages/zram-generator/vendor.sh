@@ -17,3 +17,4 @@ tar -Jcf ../${NAME}-${VERSION}-vendor.tar.xz vendor/
 popd
 
 rm -rf ${NAME}-${VERSION}/
+
