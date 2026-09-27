@@ -69,9 +69,14 @@ class VersionSpellingTests(unittest.TestCase):
         for version in ("51.beta", "51.0", "1.10.beta.1"):
             self.assertEqual(tarball_version(rpm_version(version)), version)
 
-    def test_a_release_is_filed_under_its_leading_component(self) -> None:
+    def test_major_is_the_leading_component(self) -> None:
         self.assertEqual(major("51.0"), "51")
         self.assertEqual(major("1.10.beta.1"), "1")
+
+    def test_a_library_scheme_release_is_filed_under_major_minor(self) -> None:
+        self.assertEqual(release_cycle("4.23.4"), "4.23")
+        self.assertEqual(release_cycle("1.10.0"), "1.10")
+        self.assertEqual(release_cycle("51.0"), "51")
 
 
 class ReleaseSelectionTests(unittest.TestCase):
@@ -236,6 +241,20 @@ class EntryRewriteTests(unittest.TestCase):
         )
         self.assertEqual(new["sha512"], "f" * 128)
 
+    def test_a_library_scheme_bump_files_under_major_minor(self) -> None:
+        entry = dict(
+            self.entry,
+            name="gtk4",
+            version="4.23.3",
+            url="https://download.gnome.org/sources/gtk/4.23/gtk-4.23.3.tar.xz",
+            filename="gtk-4.23.3.tar.xz",
+        )
+        new = planned_entry(entry, "4.23.4", "f" * 128)
+        self.assertEqual(
+            new["url"], "https://download.gnome.org/sources/gtk/4.23/gtk-4.23.4.tar.xz"
+        )
+        self.assertEqual(new["filename"], "gtk-4.23.4.tar.xz")
+
     def test_no_field_keeps_the_superseded_version_or_digest(self) -> None:
         new = planned_entry(self.entry, "51.0", "f" * 128)
         rendered = json.dumps(new)
@@ -321,14 +340,37 @@ class PlanTests(unittest.TestCase):
     """plan() reads the real inventory but never the network."""
 
     def test_proposes_the_final_for_a_locked_prerelease(self) -> None:
-        opener = fake_opener(
-            {
-                "https://download.gnome.org/sources/gnome-shell/cache.json": json.dumps(
-                    GNOME_SHELL_CACHE
-                ).encode()
-            }
-        )
-        proposals = plan(ROOT, only="gnome-shell", opener=opener)
+        # Hermetic: the real inventory moves as bumps land, so the fixture
+        # carries its own prerelease lock instead of reading the worktree.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "config").mkdir()
+            (root / "config" / "upstream-sources.json").write_text(
+                json.dumps(
+                    {
+                        "packages": [
+                            {
+                                "name": "gnome-shell",
+                                "version": "51.beta",
+                                "url": "https://download.gnome.org/sources/gnome-shell/51/"
+                                "gnome-shell-51.beta.tar.xz",
+                                "filename": "gnome-shell-51.beta.tar.xz",
+                                "sha512": "d" * 128,
+                            }
+                        ]
+                    },
+                    indent=2,
+                )
+                + "\n"
+            )
+            opener = fake_opener(
+                {
+                    "https://download.gnome.org/sources/gnome-shell/cache.json": json.dumps(
+                        GNOME_SHELL_CACHE
+                    ).encode()
+                }
+            )
+            proposals = plan(root, only="gnome-shell", opener=opener)
         self.assertEqual(len(proposals), 1)
         self.assertEqual(proposals[0]["kind"], "final")
         self.assertEqual(proposals[0]["current"], "51.beta")
@@ -504,7 +546,7 @@ class ApplyTests(unittest.TestCase):
                 + "\n"
             )
             opener = fake_opener(
-                {"https://download.gnome.org/sources/pango/1/pango-1.59.0.tar.xz": b"bytes"}
+                {"https://download.gnome.org/sources/pango/1.59/pango-1.59.0.tar.xz": b"bytes"}
             )
             updated = apply(root, {"name": "pango", "latest": "1.59.0"}, opener=opener)
             self.assertNotEqual(updated["sha512"], "d" * 128)

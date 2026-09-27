@@ -155,7 +155,11 @@ def rpm_version(version: str) -> str:
 
 
 def major(version: str) -> str:
-    """The directory GNOME files a release under: the leading component."""
+    """The leading component of a release, used to group forge releases.
+
+    This is NOT the download.gnome.org filing directory -- the library
+    scheme files 4.23.4 under 4.23/, which is release_cycle()'s job.
+    """
     return version.split(".")[0]
 
 
@@ -349,7 +353,10 @@ def planned_entry(entry: dict, release: str, digest: str) -> dict:
     module = gnome_module(entry)
     tarball = tarball_version(release)
     name = f"{module}-{tarball}.tar.xz"
-    base = f"{GNOME_SOURCES}{module}/{major(tarball)}"
+    # The filing directory follows the release cycle, not the leading
+    # component: app-scheme 51.0 lives under 51/, library-scheme 4.23.4
+    # under 4.23/ and 1.10.0 under 1.10/.
+    base = f"{GNOME_SOURCES}{module}/{release_cycle(tarball)}"
     updated = dict(entry)
     updated["version"] = tarball
     updated["url"] = f"{base}/{name}"
@@ -602,7 +609,7 @@ def apply(root: Path, proposal: dict, opener=urllib.request.urlopen) -> dict:
     module = gnome_module(entry)
     if module:
         tarball = tarball_version(release)
-        url = f"{GNOME_SOURCES}{module}/{major(tarball)}/{module}-{tarball}.tar.xz"
+        url = f"{GNOME_SOURCES}{module}/{release_cycle(tarball)}/{module}-{tarball}.tar.xz"
         digest = sha512_of(url, opener=opener)
         updated = planned_entry(entry, release, digest)
     else:
