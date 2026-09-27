@@ -78,6 +78,12 @@ class VersionSpellingTests(unittest.TestCase):
         self.assertEqual(release_cycle("1.10.0"), "1.10")
         self.assertEqual(release_cycle("51.0"), "51")
 
+    def test_an_app_scheme_point_release_stays_in_its_gnome_cycle(self) -> None:
+        # nautilus 51.0.1 is a point release of GNOME 51, not a new cycle;
+        # without this the tool would file it under 51.0/ and flag it review.
+        self.assertEqual(release_cycle("51.0.1"), "51")
+        self.assertEqual(release_cycle("1.90.0"), "1.90")
+
 
 class ReleaseSelectionTests(unittest.TestCase):
     def test_picks_the_final_over_every_prerelease_of_the_same_cycle(self) -> None:
@@ -411,10 +417,21 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(len(proposals), 1)
         self.assertIn("error", proposals[0])
 
-    def test_considers_only_packages_locked_to_gnome(self) -> None:
-        # nautilus is locked to Fedora's lookaside, so it is out of scope even
-        # though it is a GNOME module and is sitting on a prerelease.
-        self.assertEqual(plan(ROOT, only="nautilus", opener=fake_opener({})), [])
+    def test_full_runs_skip_lookaside_locks_but_package_runs_surface_them(self) -> None:
+        # A lock on Fedora's lookaside is out of scope for a full scan even
+        # though nautilus is a GNOME module sitting on a prerelease; naming
+        # it explicitly offers the GNOME relock instead (and an unreachable
+        # module reports an error rather than vanishing).
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "config").mkdir()
+            (root / "config" / "upstream-sources.json").write_text(
+                json.dumps({"packages": [LOOKASIDE_NAUTILUS]}, indent=2) + "\n"
+            )
+            self.assertEqual(plan(root, None, opener=fake_opener({})), [])
+            proposals = plan(root, only="nautilus", opener=fake_opener({}))
+            self.assertEqual(len(proposals), 1)
+            self.assertIn("error", proposals[0])
 
 
 class ReleaseResetTests(unittest.TestCase):
@@ -473,6 +490,108 @@ class ReleaseResetTests(unittest.TestCase):
                     else:
                         self.assertNotIn("dist_bump", written)
                     self.assertIn("Release: 1%{?dist}", spec.read_text())
+
+
+NAUTILUS_CACHE = [4, {}, {"nautilus": ["51.alpha", "51.beta", "51.rc", "51.0", "51.0.1"]}, {}]
+
+LOOKASIDE_NAUTILUS = {
+    "name": "nautilus",
+    "version": "51~beta",
+    "url": "https://src.fedoraproject.org/repo/pkgs/rpms/nautilus/nautilus-51.beta.tar.xz/"
+    "sha512/" + "d" * 128 + "/nautilus-51.beta.tar.xz",
+    "filename": "nautilus-51.beta.tar.xz",
+    "sha512": "d" * 128,
+    "stage": 6,
+}
+
+
+class RelockTests(unittest.TestCase):
+    """A --package run may move a GNOME lock off the Fedora lookaside."""
+
+    def locks(self) -> dict:
+        return {"nautilus": dict(LOOKASIDE_NAUTILUS)}
+
+    def test_package_mode_offers_the_gnome_module_but_full_runs_do_not(self) -> None:
+        singled = candidates(self.locks(), only="nautilus")
+        self.assertEqual(
+            singled, [("nautilus", self.locks()["nautilus"], {"forge": "gnome", "module": "nautilus", "relock": True})]
+        )
+        self.assertEqual(candidates(self.locks(), None), [])
+
+    def test_proposes_a_relock_when_gnome_is_newer(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "config").mkdir()
+            (root / "config" / "upstream-sources.json").write_text(
+                json.dumps({"packages": [LOOKASIDE_NAUTILUS]}, indent=2) + "\n"
+            )
+            opener = fake_opener(
+                {
+                    "https://download.gnome.org/sources/nautilus/cache.json": json.dumps(
+                        NAUTILUS_CACHE
+                    ).encode()
+                }
+            )
+            proposals = plan(root, only="nautilus", opener=opener)
+        self.assertEqual(len(proposals), 1)
+        self.assertEqual(proposals[0]["kind"], "relock")
+        self.assertEqual(proposals[0]["current"], "51~beta")
+        self.assertEqual(proposals[0]["latest"], "51.0.1")
+
+    def test_a_name_with_no_gnome_module_is_a_visible_skip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "config").mkdir()
+            entry = dict(LOOKASIDE_NAUTILUS, name="not-a-gnome-module")
+            (root / "config" / "upstream-sources.json").write_text(
+                json.dumps({"packages": [entry]}, indent=2) + "\n"
+            )
+            proposals = plan(root, only="not-a-gnome-module", opener=fake_opener({}))
+        self.assertEqual(len(proposals), 1)
+        self.assertIn("error", proposals[0])
+
+    def test_relock_moves_the_primary_and_all_three_files(self) -> None:
+        import hashlib
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "config").mkdir()
+            (root / "config" / "upstream-sources.json").write_text(
+                json.dumps({"packages": [LOOKASIDE_NAUTILUS]}, indent=2) + "\n"
+            )
+            package = root / "packages" / "nautilus"
+            package.mkdir(parents=True)
+            (package / "nautilus.spec").write_text("Version:        51~beta\n")
+            (package / "sources").write_text(
+                f"SHA512 (nautilus-51.beta.tar.xz) = {'d' * 128}\n"
+            )
+            payload = b"a plausible nautilus tarball"
+            expected = hashlib.sha512(payload).hexdigest()
+            opener = fake_opener(
+                {
+                    "https://download.gnome.org/sources/nautilus/51/nautilus-51.0.1.tar.xz": payload
+                }
+            )
+            apply(
+                root,
+                {"name": "nautilus", "latest": "51.0.1", "module": "nautilus", "kind": "relock"},
+                opener=opener,
+            )
+            written = json.loads((root / "config" / "upstream-sources.json").read_text())[
+                "packages"
+            ][0]
+            self.assertEqual(written["version"], "51.0.1")
+            self.assertEqual(
+                written["url"],
+                "https://download.gnome.org/sources/nautilus/51/nautilus-51.0.1.tar.xz",
+            )
+            self.assertEqual(written["filename"], "nautilus-51.0.1.tar.xz")
+            self.assertEqual(written["sha512"], expected)
+            self.assertIn("Version:        51.0.1", (package / "nautilus.spec").read_text())
+            self.assertEqual(
+                (package / "sources").read_text(),
+                f"SHA512 (nautilus-51.0.1.tar.xz) = {expected}\n",
+            )
 
 
 class ApplyTests(unittest.TestCase):

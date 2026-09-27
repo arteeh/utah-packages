@@ -191,10 +191,10 @@
     },
     {
       "name": "adwaita-icon-theme",
-      "version": "51~beta",
-      "url": "https://src.fedoraproject.org/repo/pkgs/rpms/adwaita-icon-theme/adwaita-icon-theme-51.beta.tar.xz/sha512/55141e02a509639b977b1914d9b1998f2b166de2205689e1dec0fd9b17ce2331777829056ff99a65da332fad8c463001799287c6cfefce896c4756c7047601d7/adwaita-icon-theme-51.beta.tar.xz",
-      "filename": "adwaita-icon-theme-51.beta.tar.xz",
-      "sha512": "55141e02a509639b977b1914d9b1998f2b166de2205689e1dec0fd9b17ce2331777829056ff99a65da332fad8c463001799287c6cfefce896c4756c7047601d7"
+      "version": "51.0",
+      "url": "https://download.gnome.org/sources/adwaita-icon-theme/51/adwaita-icon-theme-51.0.tar.xz",
+      "filename": "adwaita-icon-theme-51.0.tar.xz",
+      "sha512": "a72a1c875df6d684575f5561bd56c2c09aad7bd19b5fae5fadb6425280d05b9f4d0b2a26c661afcb8df7162925945cd43554237bd88ab41c89afaf2586d76e87"
     },
     {
       "name": "adwaita-icon-theme-legacy",
@@ -333,10 +333,10 @@
     },
     {
       "name": "dconf",
-      "version": "51~beta",
-      "url": "https://src.fedoraproject.org/repo/pkgs/rpms/dconf/dconf-51.beta.tar.xz/sha512/3fb2230851071fe2a6d4baa9667995df55e0ce4ce4d12a3ca559e7ed982dcb29956e5e62d5288601708bf4fdb7c60bdfca649065f3f66316403afaa4260fed6f/dconf-51.beta.tar.xz",
-      "filename": "dconf-51.beta.tar.xz",
-      "sha512": "3fb2230851071fe2a6d4baa9667995df55e0ce4ce4d12a3ca559e7ed982dcb29956e5e62d5288601708bf4fdb7c60bdfca649065f3f66316403afaa4260fed6f"
+      "version": "51.0",
+      "url": "https://download.gnome.org/sources/dconf/51/dconf-51.0.tar.xz",
+      "filename": "dconf-51.0.tar.xz",
+      "sha512": "729783063b561316d690fa38d9fb4d1df766fca1d30795ef45446e3407f7f3da3aa993c40d26df5464647643a28ea67653c6c2cbecfde79f3a5e79d83d7c8950"
     },
     {
       "name": "ddcutil",
@@ -2157,10 +2157,10 @@
     },
     {
       "name": "nautilus",
-      "version": "51~beta",
-      "url": "https://src.fedoraproject.org/repo/pkgs/rpms/nautilus/nautilus-51.beta.tar.xz/sha512/d6441b61ca0fac123d1037c11c7fe8487199af70fc0363b8065211e5ca9f56f82a9abfa98ce9f68e564dd1bd463395f031f89e5fb68b11927b7c90f302084234/nautilus-51.beta.tar.xz",
-      "filename": "nautilus-51.beta.tar.xz",
-      "sha512": "d6441b61ca0fac123d1037c11c7fe8487199af70fc0363b8065211e5ca9f56f82a9abfa98ce9f68e564dd1bd463395f031f89e5fb68b11927b7c90f302084234",
+      "version": "51.0.1",
+      "url": "https://download.gnome.org/sources/nautilus/51/nautilus-51.0.1.tar.xz",
+      "filename": "nautilus-51.0.1.tar.xz",
+      "sha512": "d6b6d2a39f60caf9d786ac9bc30acf6ec7647ddb12be712776656255d24172850f8fd0e81915cda91a719e4f7a80168e08bbf45855a2d606009961d35917b4d1",
       "stage": 6
     },
     {
@@ -2611,10 +2611,10 @@
     {
       "name": "tecla",
       "stage": 4,
-      "version": "51~beta",
-      "url": "https://src.fedoraproject.org/repo/pkgs/rpms/tecla/tecla-51.beta.tar.xz/sha512/56c58e3b439deac0f3d46ed206f6d7a92a36c59714ea58c5649f6ba88a5c20d61ca0b289e5cedb02309701dba62e8eaa6097039fd2b2ed32956abc377fb64c65/tecla-51.beta.tar.xz",
-      "filename": "tecla-51.beta.tar.xz",
-      "sha512": "56c58e3b439deac0f3d46ed206f6d7a92a36c59714ea58c5649f6ba88a5c20d61ca0b289e5cedb02309701dba62e8eaa6097039fd2b2ed32956abc377fb64c65"
+      "version": "51.0",
+      "url": "https://download.gnome.org/sources/tecla/51/tecla-51.0.tar.xz",
+      "filename": "tecla-51.0.tar.xz",
+      "sha512": "4c54087f4742c14b94a80b50be32c3a891591f3ea1ae3ba8f4b677480a610beee9855ca7f000ed9869b8350bf54b61584799e371c35d706724fa3ea8f5406157"
     },
     {
       "name": "tinyxml2",

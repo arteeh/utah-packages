@@ -33,6 +33,11 @@ Widening this tool to those is a separate decision, not an omission.
 GNOME publishes an authoritative release index per module at
 sources/<module>/cache.json, so the candidate list needs no scraping.
 
+A lock still on the Fedora lookaside can be relocked to its GNOME module
+with an explicit --package run: the tool proposes kind "relock" when GNOME
+is newer and --apply moves the primary to download.gnome.org. Full runs
+never propose relocks, so no scan moves a primary on its own.
+
 Two spellings
 -------------
 RPM orders a prerelease below its final with a tilde, so the spec says
@@ -169,9 +174,10 @@ def release_cycle(version: str) -> str:
     GNOME uses two numbering schemes and the cycle sits in a different place in
     each, so this cannot be "the first component":
 
-      gnome-shell 51.beta, 51.0     cycle 51    -- the app scheme, where the
-                                                   leading number is the GNOME
-                                                   release
+      gnome-shell 51.beta, 51.0     cycle 51    -- the app scheme (GNOME 40+),
+      nautilus 51.0.1               cycle 51       where the leading number is
+                                                   the GNOME release and every
+                                                   point release belongs to it
       pango 1.58.2, gtk4 4.23.3     cycle 1.58  -- the library scheme, where
                                                    major.minor is the cycle and
                                                    the last component is the
@@ -193,9 +199,16 @@ def release_cycle(version: str) -> str:
     if is_prerelease(version):
         # Everything before the marker is the cycle: 1.10.beta.1 -> 1.10.
         return ".".join(numeric)
-    # A three-component release keeps major.minor; a two-component one is the
-    # app scheme, where the trailing number is the point release within a cycle.
-    return ".".join(numeric[:-1]) if len(numeric) >= 3 else numeric[0]
+    if len(numeric) >= 3 and int(numeric[0]) >= 40:
+        # The app scheme (GNOME 40+): the leading number is the GNOME release
+        # and every point release belongs to it -- 51.0 and 51.0.1 are both
+        # cycle 51, filed under 51/.
+        return numeric[0]
+    # The library scheme: major.minor is the cycle, so 1.58.2 stays 1.58 and
+    # the 1.90 development series never reads as its successor.
+    if len(numeric) >= 3:
+        return ".".join(numeric[:2])
+    return numeric[0]
 
 
 def forge_feed(entry: dict) -> dict | None:
@@ -343,14 +356,17 @@ def sha512_of(url: str, opener=urllib.request.urlopen) -> str:
     return digest.hexdigest()
 
 
-def planned_entry(entry: dict, release: str, digest: str) -> dict:
+def planned_entry(entry: dict, release: str, digest: str, module: str | None = None) -> dict:
     """The locked entry rewritten for a new release.
 
     Every URL is rebuilt from the release string rather than patched, so a
     field cannot be left behind pointing at the old tarball -- fallback_urls in
-    particular embeds both the filename and the digest.
+    particular embeds both the filename and the digest. The module defaults to
+    the entry's own GNOME primary; a relock passes the new one explicitly.
     """
-    module = gnome_module(entry)
+    module = module or gnome_module(entry)
+    if not module:
+        raise ValueError(f"no GNOME module for {entry.get('name')}: refusing to guess a URL")
     tarball = tarball_version(release)
     name = f"{module}-{tarball}.tar.xz"
     # The filing directory follows the release cycle, not the leading
@@ -467,6 +483,14 @@ def candidates(locks: dict[str, dict], only: str | None = None) -> list[tuple[st
         feed = forge_feed(entry)
         if feed:
             found.append((name, entry, feed))
+            continue
+        if only:
+            # A human named this package explicitly: give it one chance to
+            # be a GNOME module still locked on the Fedora lookaside, so its
+            # tarball can be pulled from GNOME when GNOME is newer. Full runs
+            # never probe here -- 258 lookaside locks are not 258 guesses --
+            # and a name that is no GNOME module fails as a visible skip.
+            found.append((name, entry, {"forge": "gnome", "module": name, "relock": True}))
     return found
 
 
@@ -560,11 +584,14 @@ def plan(root: Path, only: str | None, opener=urllib.request.urlopen) -> list[di
         current = tarball_version(entry["version"])
         cycle = release_cycle(current)
 
+        # A lock whose primary is still the Fedora lookaside moves its bytes
+        # to GNOME as well as forward in version: a relock, not just a bump.
+        kind = "relock" if feed.get("relock") and not gnome_module(entry) else "final"
         within = cycle_final(available, cycle)
         if is_prerelease(entry["version"]) and within is not None:
             proposals.append(
                 {
-                    "kind": "final",
+                    "kind": kind,
                     "name": name,
                     "module": module,
                     "current": entry["version"],
@@ -575,7 +602,7 @@ def plan(root: Path, only: str | None, opener=urllib.request.urlopen) -> list[di
         if within is not None and version_key(within) > version_key(current):
             proposals.append(
                 {
-                    "kind": "final",
+                    "kind": kind,
                     "name": name,
                     "module": module,
                     "current": entry["version"],
@@ -606,12 +633,14 @@ def apply(root: Path, proposal: dict, opener=urllib.request.urlopen) -> dict:
     index = next(i for i, e in enumerate(document["packages"]) if e["name"] == name)
     entry = document["packages"][index]
 
-    module = gnome_module(entry)
+    # A relock proposal carries the GNOME module explicitly because the old
+    # primary is the lookaside; every other proposal reads it off the lock.
+    module = proposal.get("module") or gnome_module(entry)
     if module:
         tarball = tarball_version(release)
         url = f"{GNOME_SOURCES}{module}/{release_cycle(tarball)}/{module}-{tarball}.tar.xz"
         digest = sha512_of(url, opener=opener)
-        updated = planned_entry(entry, release, digest)
+        updated = planned_entry(entry, release, digest, module=module)
     else:
         # The new URL comes from substituting into the old one, so the digest
         # is fetched from the same address the lock will carry -- not from a
@@ -648,9 +677,12 @@ def main() -> int:
 
     proposals = plan(args.root, args.package)
     failures = [p for p in proposals if "error" in p]
-    # "final" is the GNOME in-cycle move, "update" the forge same-major one.
-    # Both are safe to write; both are reported the same way.
-    finals = [p for p in proposals if p.get("kind") in ("final", "update")]
+    # "final" is the GNOME in-cycle move, "update" the forge same-major one,
+    # "relock" a GNOME in-cycle move that also shifts the primary off the
+    # Fedora lookaside. All three are safe to write; all are reported alike.
+    # A relock only ever arises from an explicit --package run, never from a
+    # full scan, so no unattended run moves a primary on its own.
+    finals = [p for p in proposals if p.get("kind") in ("final", "update", "relock")]
     review = [p for p in proposals if p.get("kind") == "review"]
 
     for failure in failures:
