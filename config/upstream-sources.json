@@ -3269,6 +3269,13 @@
       "fallback_urls": [
         "https://src.fedoraproject.org/repo/pkgs/rpms/usbmuxd/usbmuxd-3ded00c9985a5108cfc7591a309f9a23d57a8cba.tar.gz/sha512/2c5bd94ee1cf484507c3582a101d04a32a94b33296632992f99cf4a08bc87c56e71570cd5855fb20d285344cb6e382afa8c2b1aa0be50b693b229fd25069814b/usbmuxd-3ded00c9985a5108cfc7591a309f9a23d57a8cba.tar.gz"
       ]
+    },
+    {
+      "name": "zram-generator",
+      "version": "1.2.1",
+      "url": "https://github.com/systemd/zram-generator/archive/v1.2.1/zram-generator-1.2.1.tar.gz",
+      "filename": "zram-generator-1.2.1.tar.gz",
+      "sha512": "f7d4ca7a0962b3d800307e1d0af790cb58da3be981544ad1d1ea809066c8545a8572b15ae00c2816908a90605abfd2b774fd208d3042bc6a8d4806c5d72a53e5"
     }
   ]
 }
