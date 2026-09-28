@@ -201,6 +201,40 @@ class FallbackFeedTests(unittest.TestCase):
         entry = {k: v for k, v in self.SRT.items() if k != "fallback_urls"}
         self.assertIsNone(forge_feed(entry))
 
+    def test_finds_the_forge_feed_named_by_an_explicit_feed(self) -> None:
+        entry = {k: v for k, v in self.SRT.items() if k != "fallback_urls"}
+        entry["feed"] = "https://github.com/Haivision/srt/archive/v1.5.7/srt-1.5.7.tar.gz"
+        found = candidates({"srt": entry}, only=None)
+        self.assertEqual(len(found), 1)
+        self.assertEqual(
+            found[0][2],
+            {"forge": "github", "endpoint": "tags", "owner": "Haivision", "repo": "srt"},
+        )
+
+    def test_a_proposal_from_an_explicit_feed_is_review_only(self) -> None:
+        # The primary still points at the lookaside, so the new bytes are not
+        # where the lock points: reported for a human, never applied.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "config").mkdir()
+            entry = {k: v for k, v in self.SRT.items() if k != "fallback_urls"}
+            entry["feed"] = "https://github.com/Haivision/srt/archive/v1.5.7/srt-1.5.7.tar.gz"
+            (root / "config" / "upstream-sources.json").write_text(
+                json.dumps({"packages": [entry]}, indent=2) + "\n"
+            )
+            opener = fake_opener(
+                {
+                    "https://api.github.com/repos/Haivision/srt/tags?per_page=100": json.dumps(
+                        [{"name": "v1.5.7"}, {"name": "v1.5.8"}]
+                    ).encode()
+                }
+            )
+            proposals = plan(root, only="srt", opener=opener)
+        self.assertEqual(len(proposals), 1)
+        self.assertEqual(proposals[0]["kind"], "review")
+        self.assertEqual(proposals[0]["latest"], "1.5.8")
+        self.assertIn("explicit feed", proposals[0]["reason"])
+
     def test_a_same_major_release_is_review_only_while_the_primary_is_lookaside(self) -> None:
         opener = fake_opener(
             {

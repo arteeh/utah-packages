@@ -52,6 +52,25 @@ class SourceLocksTests(unittest.TestCase):
         config = self._write_config([{"name": "demo", "sha512": "0" * 128}])
         assert load_source_locks(config)["demo"].get("stage", 0) == 0
 
+    def test_forge_shaped_feed_is_accepted(self):
+        entry = {
+            "name": "demo",
+            "sha512": "0" * 128,
+            "feed": "https://github.com/a/b/archive/v1.tar.gz",
+        }
+        config = self._write_config([entry])
+        assert load_source_locks(config)["demo"]["feed"] == entry["feed"]
+
+    def test_unparseable_feed_is_a_contract_violation(self):
+        entry = {
+            "name": "demo",
+            "sha512": "0" * 128,
+            "feed": "https://example.com/some/tarball-1.0.tar.gz",
+        }
+        config = self._write_config([entry])
+        with self.assertRaisesRegex(ValueError, "unparseable feed"):
+            load_source_locks(config)
+
 
 class RebuildMatrixContractTests(unittest.TestCase):
     def _create_root(self, packages: list[dict]) -> Path:

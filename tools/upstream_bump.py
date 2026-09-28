@@ -24,11 +24,13 @@ the bytes at bump time, which is what this does.
 
 Scope
 -----
-Only entries whose Source0 is download.gnome.org. That is 17 of 341; the other
-254 resolve through Fedora's lookaside, whose natural feed is dist-git, and
-detect-rawhide-updates.yml deliberately only observes there on the stated
-policy that "Fedora is a compatibility build root, not a source-update feed."
-Widening this tool to those is a separate decision, not an omission.
+GNOME entries (Source0 on download.gnome.org) poll the module's cache.json;
+git-forge entries poll tags or releases. A lock whose own URLs reveal no feed
+-- a lookaside primary with no forge mirror -- may carry an explicit `feed`
+naming the project's real upstream feed, derived from the spec's Source0 and
+verified against the forge; see issue #134. detect-rawhide-updates.yml
+deliberately only observes the lookaside on the stated policy that "Fedora is
+a compatibility build root, not a source-update feed."
 
 GNOME publishes an authoritative release index per module at
 sources/<module>/cache.json, so the candidate list needs no scraping.
@@ -63,7 +65,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tools.package_inventory import source_locks
+from tools.package_inventory import (
+    FORGE_ARCHIVE,
+    FORGE_RELEASE,
+    GITLAB_ARCHIVE,
+    parse_feed_url,
+    source_locks,
+)
 
 GNOME_SOURCES = "https://download.gnome.org/sources/"
 
@@ -71,18 +79,6 @@ GNOME_SOURCES = "https://download.gnome.org/sources/"
 # list, which is the only feed a bump needs; releases are preferred over tags
 # where a project publishes them, because a tag is not a release.
 GITHUB_API = "https://api.github.com"
-FORGE_ARCHIVE = re.compile(
-    r"^https://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/archive/"
-)
-FORGE_RELEASE = re.compile(
-    r"^https://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/releases/download/"
-)
-# http:// appears in one lock (evtest) and a scheme is not worth missing a
-# feed over. Both GitLab shapes resolve to the same tag list: /-/archive/<tag>
-# and /-/releases/<tag>/downloads/<asset> name the tag in the same position.
-GITLAB_ARCHIVE = re.compile(
-    r"^https?://(?P<host>[^/]*gitlab[^/]*)/(?P<path>.+?)/-/(?:archive|releases)/"
-)
 LOOKASIDE = "https://src.fedoraproject.org/repo/pkgs/rpms"
 
 # alpha/beta/rc in any spelling GNOME uses: 51.beta, 51~rc, 1.10.beta.1.
@@ -226,15 +222,9 @@ def forge_feed(entry: dict) -> dict | None:
     """
     urls = [entry.get("url", ""), *entry.get("fallback_urls", [])]
     for url in urls:
-        match = FORGE_RELEASE.match(url)
-        if match:
-            return {"forge": "github", "endpoint": "releases", **match.groupdict()}
-        match = FORGE_ARCHIVE.match(url)
-        if match:
-            return {"forge": "github", "endpoint": "tags", **match.groupdict()}
-        match = GITLAB_ARCHIVE.match(url)
-        if match:
-            return {"forge": "gitlab", "endpoint": "tags", **match.groupdict()}
+        feed = parse_feed_url(url)
+        if feed:
+            return feed
     return None
 
 
@@ -467,10 +457,10 @@ def candidates(locks: dict[str, dict], only: str | None = None) -> list[tuple[st
     """(name, entry, feed) for every lock this tool can track, sorted by name.
 
     A feed is either {"forge": "gnome", "module": ...} or a git-forge
-    descriptor from forge_feed, which also reads the fallback mirrors. A lock
-    with no feed anywhere -- the Fedora lookaside with no forge mirror, a
-    bare directory listing -- has nothing to poll and is skipped; see the
-    module docstring.
+    descriptor from forge_feed, which also reads the fallback mirrors and the
+    lock's explicit `feed`. A lock with no feed anywhere -- the Fedora
+    lookaside with no forge mirror and no explicit feed, a bare directory
+    listing -- has nothing to poll and is skipped; see the module docstring.
     """
     found = []
     for name, entry in sorted(locks.items()):
@@ -484,6 +474,17 @@ def candidates(locks: dict[str, dict], only: str | None = None) -> list[tuple[st
         if feed:
             found.append((name, entry, feed))
             continue
+        # An explicit `feed` names the project's real release feed when the
+        # lock's own URLs cannot reveal one (a lookaside primary with no
+        # forge mirror). The primary still points at the lookaside, so any
+        # proposal from it stays review-only -- the new bytes are not where
+        # the lock points until a human moves the primary.
+        explicit = entry.get("feed")
+        if explicit:
+            feed = parse_feed_url(explicit)
+            if feed:
+                found.append((name, entry, feed))
+                continue
         if only:
             # A human named this package explicitly: give it one chance to
             # be a GNOME module still locked on the Fedora lookaside, so its
@@ -571,16 +572,21 @@ def plan(
         if feed["forge"] != "gnome":
             proposal = forge_proposal(name, entry, feed, opener=opener)
             if proposal.get("kind") == "update" and not primary_tracks_forge(entry):
-                # The feed came from a mirror, so the primary points at the
-                # lookaside or a bare listing: apply() would fetch the digest
-                # from an address that does not carry the new release, or
-                # substitute a version into a URL that has none. Report it so
-                # a human sees the release; main() only applies final/update.
+                # The feed came from a mirror or an explicit `feed`, so the
+                # primary points at the lookaside or a bare listing: apply()
+                # would fetch the digest from an address that does not carry
+                # the new release, or substitute a version into a URL that has
+                # none. Report it so a human sees the release; main() only
+                # applies final/update.
+                if "feed" in entry:
+                    where = "the lock's explicit feed"
+                else:
+                    where = "a fallback mirror"
                 proposal = {
                     **proposal,
                     "kind": "review",
                     "reason": (
-                        "the release feed is tracked through a fallback mirror; "
+                        f"the release feed is tracked through {where}; "
                         "the new bytes must be ingested through the primary first"
                     ),
                 }
