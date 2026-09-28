@@ -539,8 +539,19 @@ def forge_proposal(name: str, entry: dict, feed: dict, opener=urllib.request.url
     }
 
 
-def plan(root: Path, only: str | None, opener=urllib.request.urlopen) -> list[dict]:
+def plan(
+    root: Path,
+    only: str | None,
+    opener=urllib.request.urlopen,
+    cycle: str | None = None,
+) -> list[dict]:
     """What would change, without changing anything.
+
+    `cycle` names the release cycle to move within (GNOME 52 work runs with
+    --cycle 52 on a next branch). Without it each lock stays in the cycle it
+    already names, so a scheduled run never jumps GNOME majors on its own --
+    and a cycle whose final has not shipped yet proposes nothing, so even an
+    explicit --cycle cannot land on an alpha.
 
     Each proposal carries a `kind`:
 
@@ -582,12 +593,12 @@ def plan(root: Path, only: str | None, opener=urllib.request.urlopen) -> list[di
             proposals.append({"name": name, "error": f"{module}: {error}"})
             continue
         current = tarball_version(entry["version"])
-        cycle = release_cycle(current)
+        target = cycle or release_cycle(current)
 
         # A lock whose primary is still the Fedora lookaside moves its bytes
         # to GNOME as well as forward in version: a relock, not just a bump.
         kind = "relock" if feed.get("relock") and not gnome_module(entry) else "final"
-        within = cycle_final(available, cycle)
+        within = cycle_final(available, target)
         if is_prerelease(entry["version"]) and within is not None:
             proposals.append(
                 {
@@ -669,13 +680,19 @@ def main() -> int:
     parser.add_argument("--root", type=Path, default=Path("."))
     parser.add_argument("--package", help="consider only this package")
     parser.add_argument(
+        "--cycle",
+        help="move within this release cycle instead of each lock's own "
+        "(GNOME 52 work runs with --cycle 52 on a next branch; a cycle "
+        "with no final shipped proposes nothing)",
+    )
+    parser.add_argument(
         "--apply",
         action="store_true",
         help="rewrite the inventory, spec and sources manifest (default: report only)",
     )
     args = parser.parse_args()
 
-    proposals = plan(args.root, args.package)
+    proposals = plan(args.root, args.package, cycle=args.cycle)
     failures = [p for p in proposals if "error" in p]
     # "final" is the GNOME in-cycle move, "update" the forge same-major one,
     # "relock" a GNOME in-cycle move that also shifts the primary off the

@@ -434,6 +434,101 @@ class PlanTests(unittest.TestCase):
             self.assertIn("error", proposals[0])
 
 
+GNOME_52_CACHE = [4, {}, {"gnome-shell": ["51.0", "51.1", "52.alpha", "52.beta", "52.0"]}, {}]
+GNOME_52_ALPHA_ONLY_CACHE = [4, {}, {"gnome-shell": ["51.0", "51.1", "52.alpha"]}, {}]
+
+
+def gnome_lock_root(version: str) -> tuple[Path, object]:
+    """A temp tree with one GNOME-primary gnome-shell lock at `version`."""
+    tmp = tempfile.TemporaryDirectory()
+    root = Path(tmp.name)
+    (root / "config").mkdir()
+    (root / "config" / "upstream-sources.json").write_text(
+        json.dumps(
+            {
+                "packages": [
+                    {
+                        "name": "gnome-shell",
+                        "version": version,
+                        "url": f"https://download.gnome.org/sources/gnome-shell/51/"
+                        f"gnome-shell-{version}.tar.xz",
+                        "filename": f"gnome-shell-{version}.tar.xz",
+                        "sha512": "d" * 128,
+                    }
+                ]
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+    return root, tmp
+
+
+class CyclePolicyTests(unittest.TestCase):
+    """Scheduled runs stay on their GNOME cycle; --cycle moves branches."""
+
+    def cache_opener(self, cache):
+        return fake_opener(
+            {
+                "https://download.gnome.org/sources/gnome-shell/cache.json": json.dumps(
+                    cache
+                ).encode()
+            }
+        )
+
+    def test_a_newer_cycle_is_review_only_without_an_override(self) -> None:
+        # At the head of cycle 51 with 52.0 shipped, the scheduled run flags
+        # the jump for a human instead of applying it.
+        root, tmp = gnome_lock_root("51.1")
+        try:
+            proposals = plan(root, only="gnome-shell", opener=self.cache_opener(GNOME_52_CACHE))
+        finally:
+            tmp.cleanup()
+        self.assertEqual(len(proposals), 1)
+        self.assertEqual(proposals[0]["kind"], "review")
+        self.assertEqual(proposals[0]["latest"], "52.0")
+
+    def test_point_releases_still_apply_inside_the_current_cycle(self) -> None:
+        root, tmp = gnome_lock_root("51.0")
+        try:
+            proposals = plan(root, only="gnome-shell", opener=self.cache_opener(GNOME_52_CACHE))
+        finally:
+            tmp.cleanup()
+        self.assertEqual(len(proposals), 1)
+        self.assertEqual(proposals[0]["kind"], "final")
+        self.assertEqual(proposals[0]["latest"], "51.1")
+
+    def test_an_explicit_cycle_moves_a_next_branch_to_the_new_final(self) -> None:
+        root, tmp = gnome_lock_root("51.0")
+        try:
+            proposals = plan(
+                root, only="gnome-shell", opener=self.cache_opener(GNOME_52_CACHE), cycle="52"
+            )
+        finally:
+            tmp.cleanup()
+        self.assertEqual(len(proposals), 1)
+        self.assertEqual(proposals[0]["kind"], "final")
+        self.assertEqual(proposals[0]["latest"], "52.0")
+
+    def test_even_an_explicit_cycle_cannot_land_on_an_alpha(self) -> None:
+        # With 52 still prerelease, --cycle 52 applies nothing: whatever is
+        # proposed is review-only, and no latest is a prerelease.
+        root, tmp = gnome_lock_root("51.0")
+        try:
+            proposals = plan(
+                root,
+                only="gnome-shell",
+                opener=self.cache_opener(GNOME_52_ALPHA_ONLY_CACHE),
+                cycle="52",
+            )
+        finally:
+            tmp.cleanup()
+        self.assertTrue(proposals, "the 51.1 point release is still reported")
+        for proposal in proposals:
+            self.assertNotIn(proposal.get("kind"), ("final", "update", "relock"))
+            self.assertFalse(is_prerelease(proposal["latest"]))
+
+
 class ReleaseResetTests(unittest.TestCase):
     def test_version_bump_resets_only_literal_releases(self):
         for old, expected in (
