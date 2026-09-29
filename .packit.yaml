@@ -2392,6 +2392,12 @@ packages:
     downstream_package_name: zimg
     paths:
       - packages/zimg
+  zram-generator:
+    specfile_path: zram-generator.spec
+    upstream_package_name: zram-generator
+    downstream_package_name: zram-generator
+    paths:
+      - packages/zram-generator
   zsh:
     specfile_path: zsh.spec
     upstream_package_name: zsh
