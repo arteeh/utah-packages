@@ -1,20 +1,23 @@
 name: Bump upstream source locks
 
 # Opens one reviewable PR when a source this factory tracks ships a newer
-# release. Three feeds are polled, covering 80 of the 373 locks:
+# release. Three feeds are polled, plus explicit per-lock feeds, covering
+# 169 of the 400 locks:
 #
-#   download.gnome.org  20  cache.json per-module release index
-#   github.com          47  tags, or releases where a project publishes them
-#   gitlab (3 hosts)    13  repository tags API
+#   download.gnome.org  22  cache.json per-module release index
+#   git forges        ~147  tags, or releases where a project publishes them:
+#                           79 read off lock URLs, 68 from a lock's explicit
+#                           `feed` naming its real upstream feed when its own
+#                           URLs cannot (issue #134)
 #
 # A lock whose stable primary is the lookaside still tracks the feed its
-# fallback mirror names, but only as a review-only proposal: the new bytes
-# are not in the lookaside until Fedora uploads them.
+# fallback mirror or its explicit `feed` names, but only as a review-only
+# proposal: the new bytes are not in the lookaside until Fedora uploads them.
 #
-# The remaining 293 are locked on Fedora's lookaside cache or on a bare
+# The remaining 231 are locked on Fedora's lookaside cache or on a bare
 # directory listing. A lookaside URL carries its own digest in the path, so
 # there is nothing to poll for "latest"; reaching those needs each project's
-# real upstream feed identified per package, which is tracked separately.
+# real upstream feed identified per package, which is tracked in #134.
 #
 # renovate.json has a custom manager aimed at config/upstream-sources.json,
 # but it keys on datasource and depName and 0 of 340 entries carry either, so

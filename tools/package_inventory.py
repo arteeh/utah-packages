@@ -14,6 +14,7 @@ package are contract violations, not warnings.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -33,6 +34,36 @@ KNOWN_STAGES = frozenset(range(11))
 
 # Per-package overrides of the run's build lane (build-stage.yml backend).
 BUILD_LANES = frozenset({"container"})
+
+# The git forges a lock's explicit `feed` may name. Both expose an ordered tag
+# list, which is the only feed a bump needs; releases are preferred over tags
+# where a project publishes them, because a tag is not a release.
+FORGE_ARCHIVE = re.compile(
+    r"^https://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/archive/"
+)
+FORGE_RELEASE = re.compile(
+    r"^https://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/releases/download/"
+)
+# http:// appears in one lock (evtest) and a scheme is not worth missing a
+# feed over. Both GitLab shapes resolve to the same tag list: /-/archive/<tag>
+# and /-/releases/<tag>/downloads/<asset> name the tag in the same position.
+GITLAB_ARCHIVE = re.compile(
+    r"^https?://(?P<host>[^/]*gitlab[^/]*)/(?P<path>.+?)/-/(?:archive|releases)/"
+)
+
+
+def parse_feed_url(url: str) -> dict | None:
+    """The forge feed descriptor an explicit lock `feed` names, if it names one."""
+    match = FORGE_RELEASE.match(url)
+    if match:
+        return {"forge": "github", "endpoint": "releases", **match.groupdict()}
+    match = FORGE_ARCHIVE.match(url)
+    if match:
+        return {"forge": "github", "endpoint": "tags", **match.groupdict()}
+    match = GITLAB_ARCHIVE.match(url)
+    if match:
+        return {"forge": "gitlab", "endpoint": "tags", **match.groupdict()}
+    return None
 
 
 @dataclass(frozen=True)
@@ -113,6 +144,11 @@ def load_source_locks(config: Path) -> dict[str, dict]:
             reason = entry.get("build_lane_reason")
             if not isinstance(reason, str) or not reason.strip():
                 raise ValueError(f"{name}: build_lane needs a build_lane_reason")
+        # An explicit release feed must name a forge this factory can poll;
+        # anything else is a silent hole in the bump coverage, not a feed.
+        feed = entry.get("feed")
+        if feed is not None and parse_feed_url(feed) is None:
+            raise ValueError(f"unparseable feed for {name}: {feed!r}")
         locks[name] = entry
     return locks
 
